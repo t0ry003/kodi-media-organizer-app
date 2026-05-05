@@ -33,11 +33,82 @@ TVMAZE_API = "http://api.tvmaze.com"
 SHOW_NAME_OVERRIDES = {
     # Example: Folder is "That Night", TVMaze knows it as "Esa noche"
     "That Night (2026)": "Esa noche",
+    "Star Wars Maul Shadow Lord": "Star Wars: Maul - Shadow Lord",
 }
 # ==============================================================================
 
 # Cache for show episodes
 EPISODE_CACHE = {}
+
+
+_RELEASE_NOISE_PATTERN = re.compile(
+    r"\b(?:"
+    r"2160p|1080p|720p|480p|4k|hdr10\+?|hdr10|hdr|dovi|dv|atmos|dsnp|disney\+|"
+    r"web[- ]dl|webrip|bluray|bdrip|h\.265|h265|x265|h\.264|x264|ddp\+?\d+(?:\.\d+)?|dd\+?\d+(?:\.\d+)?|"
+    r"playweb|amzn|nf|hmax|ma|proper|repack|hybrid|remux"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def normalize_show_name(name):
+    """Turn a noisy folder/file name into a cleaner TVMaze search candidate."""
+    if not name:
+        return ""
+
+    value = re.sub(r'[._]+', ' ', name)
+    value = re.sub(r'[\[\]\(\)]', ' ', value)
+    value = re.sub(r'\bS\d{1,2}(?:E\d{1,2})?\b.*$', '', value, flags=re.IGNORECASE)
+    value = re.sub(r'\b(?:19\d{2}|20\d{2})\b', '', value)
+    value = _RELEASE_NOISE_PATTERN.sub(' ', value)
+    value = re.sub(r'\s+', ' ', value).strip()
+    return value
+
+
+def _get_override(show_name):
+    normalized = normalize_show_name(show_name).casefold()
+    for key, value in SHOW_NAME_OVERRIDES.items():
+        if normalize_show_name(key).casefold() == normalized:
+            return value
+    return None
+
+
+def _load_mapping(mapping_path):
+    if not os.path.exists(mapping_path):
+        return {}
+    try:
+        with open(mapping_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_mapping(mapping_path, mapping):
+    try:
+        with open(mapping_path, 'w', encoding='utf-8') as f:
+            json.dump(mapping, f, indent=2)
+    except Exception:
+        pass
+
+
+def _remove_path_and_parents(path, stop_root):
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+    parent = os.path.dirname(path)
+    stop_root = os.path.abspath(stop_root)
+    while os.path.abspath(parent).startswith(stop_root):
+        try:
+            if not os.listdir(parent):
+                os.rmdir(parent)
+                parent = os.path.dirname(parent)
+            else:
+                break
+        except Exception:
+            break
 
 
 def clean_filename(name):
@@ -56,13 +127,10 @@ def get_show_episodes(show_name):
     print(f"Fetching metadata for: {show_name}...")
 
     # 1. Determine Search Term
-    # Check override first
-    search_term = SHOW_NAME_OVERRIDES.get(show_name)
-
+    # Check override first, then fall back to normalized search text.
+    search_term = _get_override(show_name)
     if not search_term:
-        # Default cleaning: Remove year (e.g. "Show Name (2024)" -> "Show Name")
-        # This usually helps TVMaze find the show better.
-        search_term = re.sub(r'\(\d{4}\)', '', show_name).strip()
+        search_term = normalize_show_name(show_name)
 
     quoted_query = urllib.parse.quote(search_term)
     search_url = f"{TVMAZE_API}/singlesearch/shows?q={quoted_query}&embed=episodes"
@@ -117,18 +185,29 @@ def create_hard_link(src, dst):
         # Ensure directory exists
         os.makedirs(os.path.dirname(dst), exist_ok=True)
 
+        # If this source already exists at a different Kodi destination,
+        # migrate the link so the old bad folder/path disappears.
+        mapping_path = os.path.join(DEST_DIR, '.organizer_links_tv.json')
+        mapping = _load_mapping(mapping_path)
+        src_abs = os.path.abspath(src)
+        dst_abs = os.path.abspath(dst)
+
+        changed = False
+        for old_dst, old_src in list(mapping.items()):
+            if os.path.abspath(old_src) == src_abs and os.path.abspath(old_dst) != dst_abs:
+                _remove_path_and_parents(old_dst, DEST_DIR)
+                mapping.pop(old_dst, None)
+                changed = True
+
+        if changed:
+            _save_mapping(mapping_path, mapping)
+
         os.link(src, dst)
 
         # Record mapping so we can later remove orphaned destination links
         try:
-            mapping_path = os.path.join(DEST_DIR, '.organizer_links_tv.json')
-            mapping = {}
-            if os.path.exists(mapping_path):
-                with open(mapping_path, 'r', encoding='utf-8') as f:
-                    mapping = json.load(f)
-            mapping[os.path.abspath(dst)] = os.path.abspath(src)
-            with open(mapping_path, 'w', encoding='utf-8') as f:
-                json.dump(mapping, f, indent=2)
+            mapping[dst_abs] = src_abs
+            _save_mapping(mapping_path, mapping)
         except Exception:
             pass
 
@@ -163,7 +242,7 @@ def scan_and_link():
             # Skip root folder files
             continue
 
-        current_show_folder = path_parts[0]  # Top level folder name
+        current_show_folder = normalize_show_name(path_parts[0]) or path_parts[0]
 
         # Prefetch metadata for this show if we haven't already
         # (This is slightly inefficient if folder has mixed shows, but that's rare)
