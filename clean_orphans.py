@@ -63,6 +63,21 @@ def _remove_file_and_empty_dirs(fpath, dest_root_abs, dry_run=False):
     _prune_empty_parent_dirs(fpath, dest_root_abs, dry_run=dry_run)
 
 
+def _sweep_empty_directories(dest_root_abs, dry_run=False):
+    """Remove empty directories anywhere under dest_root_abs."""
+    for root, dirs, files in os.walk(dest_root_abs, topdown=False):
+        if os.path.abspath(root) == os.path.abspath(dest_root_abs):
+            continue
+
+        # Never remove the folder that holds the mapping file if it still has content.
+        try:
+            if not dirs and not files and os.path.isdir(root):
+                if not dry_run:
+                    os.rmdir(root)
+        except Exception:
+            continue
+
+
 def remove_if_orphan(mapping_path, dest_root, dry_run=False):
     mapping = load_mapping(mapping_path)
     dest_root_abs = os.path.abspath(dest_root)
@@ -128,6 +143,9 @@ def remove_if_orphan(mapping_path, dest_root, dry_run=False):
                 if not dry_run:
                     _remove_file_and_empty_dirs(fpath, dest_root_abs, dry_run=False)
                     removed += 1
+
+    # Final pass: remove any empty folders left behind after file cleanup.
+    _sweep_empty_directories(dest_root_abs, dry_run=dry_run)
 
     if not dry_run:
         save_mapping(mapping_path, mapping)
