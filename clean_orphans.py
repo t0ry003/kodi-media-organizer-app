@@ -35,6 +35,23 @@ def save_mapping(path, mapping):
         print('Failed to save mapping', path, e)
 
 
+def _prune_empty_parent_dirs(start_path, stop_root_abs, dry_run=False):
+    """Remove empty parent directories from start_path up to stop_root_abs."""
+    parent = os.path.dirname(start_path)
+    stop_root_abs = os.path.abspath(stop_root_abs)
+
+    while os.path.abspath(parent).startswith(stop_root_abs):
+        try:
+            if os.path.isdir(parent) and not os.listdir(parent):
+                if not dry_run:
+                    os.rmdir(parent)
+                parent = os.path.dirname(parent)
+            else:
+                break
+        except Exception:
+            break
+
+
 def _remove_file_and_empty_dirs(fpath, dest_root_abs, dry_run=False):
     """Remove file and cleanup empty parent dirs up to dest_root."""
     if not dry_run and os.path.exists(fpath):
@@ -42,18 +59,8 @@ def _remove_file_and_empty_dirs(fpath, dest_root_abs, dry_run=False):
             os.remove(fpath)
         except Exception:
             pass
-    
-    if not dry_run:
-        parent = os.path.dirname(fpath)
-        while os.path.abspath(parent).startswith(dest_root_abs):
-            try:
-                if not os.listdir(parent):
-                    os.rmdir(parent)
-                    parent = os.path.dirname(parent)
-                else:
-                    break
-            except Exception:
-                break
+
+    _prune_empty_parent_dirs(fpath, dest_root_abs, dry_run=dry_run)
 
 
 def remove_if_orphan(mapping_path, dest_root, dry_run=False):
@@ -85,12 +92,18 @@ def remove_if_orphan(mapping_path, dest_root, dry_run=False):
                 if not dry_run:
                     _remove_file_and_empty_dirs(dst, dest_root_abs, dry_run=False)
                     removed += 1
+            else:
+                # The file is already gone, but we still want to prune now-empty folders.
+                if not dry_run:
+                    _prune_empty_parent_dirs(dst, dest_root_abs, dry_run=False)
             mapping.pop(dst, None)
             cleaned_entries += 1
         else:
             # If source exists but dest missing, remove mapping entry
             if not dst_exists:
                 print('Dest missing for existing source, removing mapping entry:', dst)
+                if not dry_run:
+                    _prune_empty_parent_dirs(dst, dest_root_abs, dry_run=False)
                 mapping.pop(dst, None)
                 cleaned_entries += 1
 

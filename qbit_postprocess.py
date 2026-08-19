@@ -33,6 +33,12 @@ def _is_under(path, root):
         return False
 
 
+def _run_full_cleanup():
+    """Always clean both libraries so folder pruning stays in sync."""
+    log("Running full cleanup for Movies and TVShows.")
+    organize_media.run_cleanup(movies=True, tv=True, dry_run=False)
+
+
 def main():
     parser = argparse.ArgumentParser(description="qBittorrent post-download media organizer hook")
     parser.add_argument("--path", default="", help="Completed content path from qBittorrent")
@@ -56,17 +62,17 @@ def main():
         if path and _is_under(path, om.SOURCE_DIR):
             log("Detected movie path. Running movies organize + cleanup.")
             om.scan_and_link_movies()
-            organize_media.run_cleanup(movies=True, tv=False, dry_run=False)
+            _run_full_cleanup()
             log("Movie flow completed.")
         elif path and _is_under(path, ot.SOURCE_DIR):
             log("Detected TV path. Running TV organize + cleanup.")
             ot.scan_and_link()
-            organize_media.run_cleanup(movies=False, tv=True, dry_run=False)
+            _run_full_cleanup()
             log("TV flow completed.")
         else:
             if args.always_clean:
-                log("Path not in configured source roots. Running cleanup-only for safety.")
-                organize_media.run_cleanup(movies=True, tv=True, dry_run=False)
+                log("Path not in configured source roots. Running full cleanup-only for safety.")
+                _run_full_cleanup()
                 log("Cleanup-only completed.")
             else:
                 log("Path not in configured source roots. No action taken.")
