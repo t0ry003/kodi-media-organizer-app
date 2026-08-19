@@ -44,6 +44,35 @@ It ships as a polished terminal UI with buttons and live logs, plus a qBittorren
   <img src="https://img.shields.io/badge/tag-terminal%20ui-555555" />
 </p>
 
+## One-Step Setup
+
+Use the built-in setup flow to create the whole workspace from scratch:
+
+- `Movies/`
+- `TVShows/`
+- `KodiLibrary/Movies/`
+- `KodiLibrary/TVShows/`
+- `qBittorrent/Movies/`
+- `qBittorrent/TVShows/`
+- `qBittorrent/Incomplete/`
+
+### In the TUI
+
+Click `Setup Workspace` and choose the media root.
+
+### In the CLI
+
+```powershell
+KodiMediaOrganizer.exe --setup --root D:\SHARE
+```
+
+That creates the full folder structure and saves the workspace config so the app can auto-detect it later.
+
+If you want qBittorrent to use the new download folders, point its movie and TV category save paths at:
+
+- `qBittorrent\Movies`
+- `qBittorrent\TVShows`
+
 ## Folder Layout
 
 The app expects this structure relative to the detected media root:
