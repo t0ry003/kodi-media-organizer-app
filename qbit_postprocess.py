@@ -3,8 +3,6 @@ import datetime
 import os
 import traceback
 
-import organize_movies as om
-import organize_tv as ot
 import organize_media
 from app_paths import get_paths
 
@@ -33,10 +31,10 @@ def _is_under(path, root):
         return False
 
 
-def _run_full_cleanup():
-    """Always clean both libraries so folder pruning stays in sync."""
-    log("Running full cleanup for Movies and TVShows.")
-    organize_media.run_cleanup(movies=True, tv=True, dry_run=False)
+def _run_tui_equivalent_flow():
+    """Run exactly the same full flow as the TUI Run Organize + Cleanup action."""
+    log("Running full organize + cleanup for Movies and TVShows.")
+    organize_media.run_all(cleanup=True, dry_run=False)
 
 
 def main():
@@ -59,27 +57,20 @@ def main():
     try:
         path = args.path.strip().strip('"')
 
-        if path and _is_under(path, om.SOURCE_DIR):
-            log("Detected movie path. Running movies organize + cleanup.")
-            om.scan_and_link_movies()
-            _run_full_cleanup()
-            log("Movie flow completed.")
-        elif path and _is_under(path, ot.SOURCE_DIR):
-            log("Detected TV path. Running TV organize + cleanup.")
-            ot.scan_and_link()
-            _run_full_cleanup()
-            log("TV flow completed.")
+        # qBittorrent may provide a file path, folder path, or category-specific
+        # path. The TUI's Run Organize + Cleanup action always scans both roots,
+        # so the hook intentionally does the same on every completion.
+        if path:
+            log("Completed path received; running the same full flow as the TUI.")
         else:
-            if args.always_clean:
-                log("Path not in configured source roots. Running full cleanup-only for safety.")
-                _run_full_cleanup()
-                log("Cleanup-only completed.")
-            else:
-                log("Path not in configured source roots. No action taken.")
+            log("No completed path received; running the same full flow as the TUI.")
+
+        _run_tui_equivalent_flow()
+        log("Full organize + cleanup flow completed.")
 
         log(f"Resolved root: {PATHS['root']}")
-        log(f"Movies source: {om.SOURCE_DIR}")
-        log(f"TV source: {ot.SOURCE_DIR}")
+        log(f"Movies source: {PATHS['movies_source']}")
+        log(f"TV source: {PATHS['tv_source']}")
 
         log("qBittorrent hook finished successfully")
     except Exception as exc:
